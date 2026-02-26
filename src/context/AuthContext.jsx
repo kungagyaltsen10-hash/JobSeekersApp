@@ -15,19 +15,35 @@ export function AuthProvider({ children }) {
         setLoading(false);
         return;
       }
+
+      const hasStoredUser = Boolean(user);
+      const usingLocalToken = authService.isLocalToken(token);
+
+      if (usingLocalToken || hasStoredUser) {
+        setLoading(false);
+      }
+
+      if (usingLocalToken) {
+        return;
+      }
+
       try {
-        const data = await authService.me();
-        setUser(data.user);
+        const currentUser = await authService.me();
+        setUser(currentUser);
+        storage.setUser(currentUser);
       } catch {
-        storage.clearAuth();
-        setToken(null);
-        setUser(null);
+        if (!hasStoredUser) {
+          storage.clearAuth();
+          setToken(null);
+          setUser(null);
+        }
       } finally {
         setLoading(false);
       }
     };
+
     init();
-  }, [token]);
+  }, [token, user]);
 
   const login = ({ token: nextToken, user: nextUser }) => {
     storage.setToken(nextToken);
