@@ -23,10 +23,16 @@ function SignupPage() {
     setSubmitting(true);
     try {
       const data = await authService.signup(form);
+
+      if (data.requiresLogin) {
+        navigate('/login', { replace: true });
+        return;
+      }
+
       login(data);
       navigate('/dashboard', { replace: true });
     } catch (err) {
-      setError(err.response?.data?.message || 'Unable to sign up.');
+      setError(err.message || 'Unable to sign up.');
     } finally {
       setSubmitting(false);
     }

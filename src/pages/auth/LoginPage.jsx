@@ -28,7 +28,7 @@ function LoginPage() {
       const redirectPath = location.state?.from?.pathname || '/dashboard';
       navigate(redirectPath, { replace: true });
     } catch (err) {
-      setError(err.response?.data?.message || 'Unable to login. Check your credentials.');
+      setError(err.message || 'Unable to login. Check your credentials.');
     } finally {
       setSubmitting(false);
     }
