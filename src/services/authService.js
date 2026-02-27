@@ -46,8 +46,19 @@ const isRetryableEndpointError = (error) => {
   return status === 404 || status === 405;
 };
 
-const requestAcrossEndpoints = async (endpoints, payload) => {
+const isNetworkAxiosError = (error) => Boolean(error?.isAxiosError && !error?.response);
+
+const buildEndpointNotFoundError = (flowName, endpoints) => {
+  const apiBase = import.meta.env.VITE_API_BASE_URL;
+  return new Error(
+    `${flowName} endpoint not found (404/405). Checked: ${endpoints.join(', ')}. ` +
+      `Please verify VITE_API_BASE_URL is correct (current: ${apiBase || 'not set'}) and backend auth routes are available.`
+  );
+};
+
+const requestAcrossEndpoints = async (endpoints, payload, flowName) => {
   let lastError;
+  let sawOnlyNotFoundOrMethodErrors = false;
 
   for (const endpoint of endpoints) {
     try {
@@ -55,10 +66,16 @@ const requestAcrossEndpoints = async (endpoints, payload) => {
       return { data, endpoint };
     } catch (error) {
       lastError = error;
-      if (!isRetryableEndpointError(error)) {
-        throw error;
+      if (isRetryableEndpointError(error)) {
+        sawOnlyNotFoundOrMethodErrors = true;
+        continue;
       }
+      throw error;
     }
+  }
+
+  if (sawOnlyNotFoundOrMethodErrors) {
+    throw buildEndpointNotFoundError(flowName, endpoints);
   }
 
   throw lastError;
@@ -68,21 +85,25 @@ export const authService = {
   signup: async (payload) => {
     const requestPayload = buildAuthPayload(payload);
     try {
-      const { data } = await requestAcrossEndpoints(SIGNUP_ENDPOINTS, requestPayload);
+      const { data } = await requestAcrossEndpoints(SIGNUP_ENDPOINTS, requestPayload, 'Signup');
       const normalized = normalizeAuthPayload(data, requestPayload);
 
       if (!normalized.requiresLogin) {
         return normalized;
       }
 
-      const loginResult = await requestAcrossEndpoints(LOGIN_ENDPOINTS, {
-        email: requestPayload.email,
-        password: requestPayload.password,
-      });
+      const loginResult = await requestAcrossEndpoints(
+        LOGIN_ENDPOINTS,
+        {
+          email: requestPayload.email,
+          password: requestPayload.password,
+        },
+        'Login'
+      );
 
       return normalizeAuthPayload(loginResult.data, requestPayload);
     } catch (error) {
-      if (!error.response) {
+      if (isNetworkAxiosError(error)) {
         return createLocalSession(requestPayload);
       }
       throw new Error(extractErrorMessage(error));
@@ -92,7 +113,7 @@ export const authService = {
   login: async (payload) => {
     const requestPayload = buildAuthPayload(payload);
     try {
-      const { data } = await requestAcrossEndpoints(LOGIN_ENDPOINTS, requestPayload);
+      const { data } = await requestAcrossEndpoints(LOGIN_ENDPOINTS, requestPayload, 'Login');
       const normalized = normalizeAuthPayload(data, requestPayload);
 
       if (normalized.requiresLogin) {
@@ -101,7 +122,7 @@ export const authService = {
 
       return normalized;
     } catch (error) {
-      if (!error.response) {
+      if (isNetworkAxiosError(error)) {
         return createLocalSession(requestPayload);
       }
       throw new Error(extractErrorMessage(error));
